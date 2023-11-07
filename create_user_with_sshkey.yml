@@ -1,0 +1,89 @@
+---
+- name: Create New User
+  hosts: all
+  become: true
+  gather_facts: true
+  vars:
+    # Define your username and auth_key here that you want to create on target hosts.
+    # set extra vars like
+    # -e "auth_key='ssh key'"
+    username: ""
+    userpass: "{{ lookup('ansible.builtin.password', '/tmp/passwordfile chars=ascii_letters,digits,punctuation length=16') }}"
+    super_group: "wheel"
+    auth_key: ""
+
+  tasks:
+    # if you want unique pass on each vm
+    # - name: Set userpass as fact
+    #   set_fact:
+    #     pwd: "{{ userpass }}"
+
+    - name: Set group to sudo
+      set_fact:
+        super_group: "sudo"
+      when: ansible_facts['os_family'] == "Debian"
+
+    - name: Make users passwordless for sudo in group wheel
+      tags: passwordless
+      ansible.builtin.lineinfile:
+        path: /etc/sudoers
+        state: present
+        regexp: "^%wheel"
+        line: "%wheel ALL=(ALL) NOPASSWD: ALL"
+        validate: "visudo -cf %s"
+      when: ansible_facts['os_family'] == "RedHat"
+
+    - name: Make users passwordless for sudo in group sudo
+      tags: passwordless
+      ansible.builtin.lineinfile:
+        path: /etc/sudoers
+        state: present
+        regexp: "^%sudo"
+        line: "%sudo ALL=(ALL) NOPASSWD: ALL"
+        validate: "visudo -cf %s"
+      when: ansible_facts['os_family'] == "Debian"
+
+    - name: Create User
+      ansible.builtin.user:
+        name: "{{ username }}"
+        state: present
+        shell: /bin/bash
+        # if you want unique pass on each vm
+        # password: "{{ pwd | password_hash('sha512') }}"
+        password: "{{ userpass | password_hash('sha512') }}"
+        #update_password: on_create
+        groups: "{{ super_group }}"
+        append: yes
+      when: username | length > 0
+
+    - name: Create .ssh folder
+      ansible.builtin.file:
+        path: ~{{ username }}/.ssh
+        state: directory
+        owner: "{{ username }}"
+        group: "{{ username }}"
+        mode: 0700
+      when: username | length > 0
+
+    - name: Add keys
+      ansible.builtin.lineinfile: dest=~{{ username }}/.ssh/authorized_keys
+        state=present
+        create=yes
+        line="{{ auth_key }}"
+        owner={{ username }}
+        group={{ username }}
+        mode=0644
+      when: auth_key | length > 0
+
+    - name: Password
+      ansible.builtin.debug:
+        # msg: "{{ pwd }}"
+        msg: "{{ lookup('ansible.builtin.file', '/tmp/passwordfile') }}"
+
+  post_tasks:
+    - name: Remove /tmp/passwordfile
+      delegate_to: 127.0.0.1
+      ansible.builtin.file:
+        path: /tmp/passwordfile
+        state: absent
+      become_method: enable

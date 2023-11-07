@@ -1,0 +1,64 @@
+---
+- name: Install package updates
+  hosts: all
+  gather_facts: yes
+  become: yes
+
+  tasks:
+    - name: Debian-family update
+      block:
+        - name: Perform a dist-upgrade.
+          ansible.builtin.apt:
+            upgrade: dist
+            update_cache: yes
+
+        - name: Check if a reboot is required.
+          ansible.builtin.stat:
+            path: /var/run/reboot-required
+            get_checksum: false
+          register: reboot_required_file
+
+        - name: Debian-family reboot?
+          ansible.builtin.debug:
+            msg: "This should be a reboot!"
+          when: reboot_required_file.stat.exists
+
+        - name: Remove dependencies that are no longer required.
+          ansible.builtin.apt:
+            autoremove: yes
+      when: ansible_facts['os_family'] == "Debian"
+
+    - name: RedHat-family update
+      block:
+        - name: Update all installed packages using YUM module.
+          ansible.builtin.yum:
+            name: "*"
+            state: latest
+            update_cache: yes
+            update_only: yes
+          register: yum_update
+
+        - name: check to see if we need a reboot
+          ansible.builtin.command: dnf needs-restarting -r
+          register: result
+          ignore_errors: yes
+
+        - name: display result
+          ansible.builtin.debug:
+            var: result.rc
+
+        # - name: RedHat-family reboot
+        #   ansible.builtin.debug:
+        #     msg: "This should be a reboot!"
+        #   when:
+        #     - yum_update.changed
+        #     - (yum_update.results[0] | regex_search('kernel')) is not none
+
+        - name: Remove dependencies that are no longer required.
+          ansible.builtin.yum:
+            autoremove: yes
+      when: ansible_facts['os_family'] == "RedHat"
+
+    # - name: Reboot the server (if required).
+    #   ansible.builtin.reboot:
+    #   when: reboot_required_file.stat.exists == true

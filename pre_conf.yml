@@ -1,0 +1,30 @@
+---
+- name: Pre-configuration linux
+  hosts: all
+  become: true
+
+  tasks:
+    - name: Configure history
+      tags: history-tag
+      ansible.builtin.blockinfile:
+        create: yes
+        path: /etc/profile.d/history.sh
+        owner: root
+        block: |
+          export HISTTIMEFORMAT="%F %T "
+          export HISTSIZE=10000
+          export HISTFILESIZE=10000
+          shopt -s histappend
+          PROMPT_COMMAND="history -a"
+          shopt -s cmdhist
+
+    - name: Configure autologout TMOUT
+      tags: tmout-tag
+      ansible.builtin.blockinfile:
+        create: yes
+        path: /etc/profile.d/autologout.sh
+        owner: root
+        block: |
+          TMOUT=300
+          readonly TMOUT
+          export TMOUT

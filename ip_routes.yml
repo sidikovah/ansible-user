@@ -1,0 +1,53 @@
+---
+- name: Static routes configuration
+  hosts: k8s_workers_dev
+  become: true
+  tasks:
+    - name: Configure bash script with ip routes
+      tags: iproutes-tag
+      ansible.builtin.blockinfile:
+        create: yes
+        path: /usr/local/sbin/iproutes.sh
+        owner: root
+        mode: "755"
+        block: |
+          #!/bin/bash
+          # m.egov.kz
+          ip route add 195.12.113.92 via 10.131.2.1
+          # VSHEP
+          ip route add 195.12.113.0/24 via 10.200.0.1
+
+          ip route add 10.70.0.0/16 via 10.131.2.1
+          ip route add 10.80.21.0/24 via 10.131.2.1
+          ip route add 10.80.22.0/24 via 10.131.2.1
+          ip route add 10.80.23.0/24 via 10.131.2.1
+          ip route add 10.128.10.0/24 via 10.131.2.1
+
+    - name: Configure systemd service for ip routes script
+      tags: iproutes-tag
+      ansible.builtin.blockinfile:
+        create: yes
+        path: /etc/systemd/system/iproutes.service
+        owner: root
+        block: |
+          [Unit]
+          Description=Adding static ip routes service
+          After=network.target
+          StartLimitIntervalSec=0
+          [Service]
+          Type=simple
+          Restart=always
+          RestartSec=1
+          RestartPreventExitStatus=2
+          User=root
+          ExecStart=/usr/local/sbin/iproutes.sh
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Restart service
+      ansible.builtin.systemd:
+        name: iproutes.service
+        state: restarted
+        enabled: true
+        daemon_reload: true

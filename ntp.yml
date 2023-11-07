@@ -1,0 +1,15 @@
+---
+- name: NTP
+  hosts: all
+  become: true
+  vars:
+    ntp_manage_config: true
+    ntp_cron_handler_enabled: true
+    ntp_tinker_panic: true
+    ntp_timezone: Asia/Almaty
+    ntp_servers:
+      - "ntp1.ps.kz iburst"
+      - "ntp2.ps.kz iburst"
+
+  roles:
+    - geerlingguy.ntp

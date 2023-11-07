@@ -1,0 +1,105 @@
+---
+- name: OS hardening
+  hosts: all
+  become: true
+  vars:
+    _auditd_packages:
+      default:
+        - audit
+      Debian:
+        - auditd
+
+    auditd_packages: "{{ _auditd_packages[ansible_os_family] | default(_auditd_packages['default']) }}"
+
+  tasks:
+    # - name: Set a login banner
+    #   ansible.builtin.copy:
+    #     dest: "{{ item }}"
+    #     src: etc/issue
+    #     owner: root
+    #     group: root
+    #     mode: "0644"
+    #   with_items:
+    #     - /etc/issue
+    #     - /etc/issue.net
+
+    # - name: Add hardened SSH config
+    #   ansible.builtin.copy:
+    #     dest: /etc/ssh/sshd_config
+    #     src: etc/ssh/sshd_config
+    #     owner: root
+    #     group: root
+    #     mode: "0600"
+    #     backup: yes
+    #     validate: /usr/sbin/sshd -T -f %s
+    #   notify: Reload SSH
+
+    - name: Install libpam-pwquality on Debian-family
+      ansible.builtin.package:
+        name: "libpam-pwquality"
+        state: present
+      when: ansible_facts['os_family'] == "Debian"
+
+    - name: Write pwquality.conf
+      ansible.builtin.copy:
+        src: etc/security/pwquality.conf
+        dest: /etc/security/pwquality.conf
+        owner: root
+        group: root
+        mode: "u=rw,go=r"
+
+    - name: Add to PAM config
+      ansible.builtin.lineinfile:
+        path: "/etc/pam.d/common-password"
+        regexp: '^password.*pam_pwquality\.so'
+        insertbefore: '^password.*pam_unix\.so'
+        line: "password\trequisite\t\t\tpam_pwquality.so retry=5"
+        owner: root
+        group: root
+        mode: "u=rw,go=r"
+      when: ansible_facts['os_family'] == "Debian"
+
+    - name: Add to system-auth and password-auth config
+      ansible.builtin.lineinfile:
+        path: "{{ item }}"
+        regexp: '^password.*pam_pwquality\.so'
+        insertbefore: '^password.*pam_unix\.so'
+        line: "password    requisite                                    pam_pwquality.so retry=5"
+        owner: root
+        group: root
+        mode: "u=rw,go=r"
+      with_items:
+        - "/etc/authselect/system-auth"
+        - "/etc/authselect/password-auth"
+      when: ansible_facts['os_family'] == "RedHat"
+
+    - name: Install audit
+      ansible.builtin.package:
+        name: "{{ auditd_packages }}"
+        state: present
+
+    - name: Place custom.rules
+      ansible.builtin.copy:
+        src: "etc/audit/rules.d/"
+        dest: "/etc/audit/rules.d/"
+        mode: "0640"
+      notify:
+        - Run augenrules
+
+  handlers:
+    - name: Reload SSH
+      service:
+        name: sshd
+        state: reloaded
+
+    - name: Run augenrules
+      ansible.builtin.command:
+        cmd: augenrules
+      changed_when: yes
+      notify:
+        - Load rules
+
+    - name: Load rules
+      ansible.builtin.command:
+        cmd: augenrules --load
+      changed_when: yes
